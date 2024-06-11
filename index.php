@@ -10,8 +10,8 @@
     */
     require_once "VistaJson.php";
     require_once "VistaXML.php";
-    require_once "usuarios.php";
-    require_once "prestamos.php";
+    require_once "usuario.php";
+    require_once "prestamo.php";
     require_once "reporte.php";
     require_once "autor.php";
     require_once "categoria.php";
@@ -54,7 +54,7 @@
 
     // Obtener recurso
     $recurso = array_shift($peticion);
-    $recursos_existentes = array('contactos', 'usuarios', 'botones', 'clima', 'autor', 'libro', 'categoria', 'editorial', 'prestamos', 'reportepdf', 'reporte');
+    $recursos_existentes = array('contactos', 'usuario', 'botones', 'clima', 'autor', 'libro', 'categoria', 'editorial', 'prestamo', 'reportepdf', 'reporte');
 
     // Comprobar si existe el recurso
     if (!in_array($recurso, $recursos_existentes)) {

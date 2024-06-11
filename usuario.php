@@ -11,7 +11,7 @@
 require_once "ConexionBD.php";
 require_once "ExceptionApi.php";
 
-class usuarios{
+class usuario{
     // Datos de la tabla "usuario"
     const NOMBRE_TABLA = "usuario";
     const ID_USUARIO = "id_usuario";
@@ -30,12 +30,18 @@ class usuarios{
     const ESTADO_ERROR_BD = -1;
     const ESTADO_CLAVE_NO_AUTORIZADA = 410;
     const ESTADO_AUSENCIA_CLAVE_API = 411;
+    const ESTADO_URL_INCORRECTA = 400;
+    const ESTADO_PARAMETRO_INCORRECTO = 500;
+    const ESTADO_PARAMETRO_FALTANTE = 501;
+    const ESTADO_DATOS_INCORRECTOS = 601;
+    const ESTADO_PARAMETRO_NO_ENCONTRADO = 600;
+    const ESTADO_METODO_NO_PERMITIDO  = 602;
 
     public static function get($peticion){  
-        $idUsuario = usuarios::autorizar();
+        $idUsuario = usuario::autorizar();
         
         if ($idUsuario == null) {
-            throw new ExcepcionApi(self::ESTADO_CLAVE_NO_AUTORIZADA, "Clave API no autorizada");
+            throw new ExcepcionApi(self::ESTADO_CLAVE_NO_AUTORIZADA, "Token no autorizado");
         }
 
         try {
@@ -58,39 +64,84 @@ class usuarios{
     }  
 
     public static function post($peticion){
+        if (!empty($peticion)) {
+            throw new ExcepcionApi(self::ESTADO_URL_INCORRECTA, "URL no necesita segmentos adicionales");
+        }
         //Procesar post
-        //this->crear($peticion);
-        if ($peticion[0] == 'crear') {
-            $cuerpo = file_get_contents('php://input');
-            $datosBoton = json_decode($cuerpo);
-            return self::crear($datosBoton);
-        }else {
-            throw new ExcepcionApi(self::ESTADO_URL_INCORRECTA, "Url mal formada", 400);
+        if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+            if (empty($peticion) || $peticion[0] == 'crear') {
+                $cuerpo = file_get_contents('php://input');
+                $datosBoton = json_decode($cuerpo);
+                return self::crear($datosBoton);
+            } else {
+                throw new ExcepcionApi(self::ESTADO_URL_INCORRECTA, "URL mal formada");
+            }
+        } else {
+            throw new ExcepcionApi(self::ESTADO_URL_INCORRECTA, "Método no permitido. Debe ser POST.");
         }
     }
 
     public static function put($peticion){
-        $idUsuario = usuarios::autorizar();
-        //Procesar put
-        if ($peticion[0] == 'actualizar') {
-            $cuerpo = file_get_contents('php://input');
-            $datosBoton = json_decode($cuerpo);
-            return self::actualizar($datosBoton);
-        }else {
-            throw new ExcepcionApi(self::ESTADO_URL_INCORRECTA, "Url mal formada", 400);
+         $idUsuario = usuario::autorizar();
+        
+        if ($idUsuario == null) {
+            throw new ExcepcionApi(self::ESTADO_CLAVE_NO_AUTORIZADA, "Token no autorizado");
         }
+        //Procesar put
+        if ($_SERVER['REQUEST_METHOD'] === 'PUT') {
+            if (!empty($peticion) && isset($peticion[0]) && is_numeric($peticion[0])) {
+            $idUsuario = $peticion[0];
+            $cuerpo = file_get_contents('php://input');
+            $datosUsuario = json_decode($cuerpo);
+            if ($datosUsuario != null) {
+                return self::actualizar($idUsuario, $datosUsuario);
+            } else {
+                throw new ExcepcionApi(self::ESTADO_DATOS_INCORRECTOS, "Faltan datos del usuario.");
+            }
+        } else {
+            throw new ExcepcionApi(self::ESTADO_URL_INCORRECTA, "URL mal formada. Se requiere ID del usuario.");
+        }
+    } else {
+        throw new ExcepcionApi(self::ESTADO_METODO_NO_PERMITIDO, "Método no permitido. Debe ser PUT.");
     }
+}
 
 
     public static function crear($datosBoton)
     {
+        $requiredParams = ['nombre', 'apellido1', 'apellido2', 'telefono', 'password'];
+    
+        foreach ($requiredParams as $param) {
+            if (!isset($datosBoton->$param)) {
+                throw new ExcepcionApi(self::ESTADO_PARAMETRO_FALTANTE, "Faltan campos obligatorios: $param");
+            }
+        }
+
         $nombre = $datosBoton->nombre;
         $apellido1 = $datosBoton->apellido1;
         $apellido2 = $datosBoton->apellido2;
         $telefono = $datosBoton->telefono;
         $password = password_hash($datosBoton->password, PASSWORD_BCRYPT, ['cost' => 4]);
-        $token = substr(uniqid(rand(), true), 0, 11);
 
+        if (
+            empty($nombre) ||
+            empty($apellido1) ||
+            empty($apellido2) ||
+            empty($telefono) ||
+            empty($password) 
+        ) {
+            throw new ExcepcionApi(self::ESTADO_PARAMETRO_FALTANTE, "Faltan campos obligatorios");
+        }
+
+        if (
+            !is_string($nombre) ||
+            !is_string($apellido1) ||
+            !is_string($apellido2) ||
+            !is_numeric($telefono)
+        ) {
+            throw new ExcepcionApi(self::ESTADO_PARAMETRO_INCORRECTO, "Los valores no son del tipo correcto o faltan campos obligatorios");
+        }
+        $token = substr(uniqid(rand(), true), 0, 11);
         try {
             $pdo = ConexionBD::obtenerInstancia()->obtenerBD();
             // Sentencia INSERT
@@ -126,12 +177,48 @@ class usuarios{
 
     } 
 
-    public static function actualizar($datosUsuario){
+    public static function actualizar($idUsuario,$datosUsuario){
+        $requiredParams = ['nombre', 'apellido1', 'apellido2', 'telefono', 'password'];
+        $receivedParams = array_keys((array) $datosUsuario);
+
+        // Verificar si faltan parámetros obligatorios
+        foreach ($requiredParams as $param) {
+            if (!in_array($param, $receivedParams)) {
+                throw new ExcepcionApi(self::ESTADO_PARAMETRO_FALTANTE, "Falta el campo obligatorio: $param");
+            }
+        }
+
+        // Verificar el orden de los parámetros
+        if ($requiredParams !== $receivedParams) {
+            throw new ExcepcionApi(self::ESTADO_ORDEN_PARAMETROS_INCORRECTO, "El orden de los parámetros es incorrecto");
+        }
+
         $nombre = $datosUsuario->nombre;
         $apellido1 = $datosUsuario->apellido1;
         $apellido2 = $datosUsuario->apellido2;
         $telefono = $datosUsuario->telefono;
-        $idUsuario = $datosUsuario->id_usuario; // Asumiendo que el ID de usuario se pasa en $datosUsuario
+        $password = $datosUsuario->password;
+        
+        if (
+            empty($idUsuario) ||
+            empty($nombre) ||
+            empty($apellido1) ||
+            empty($apellido2) ||
+            empty($telefono) ||
+            empty($password) 
+        ) {
+            throw new ExcepcionApi(self::ESTADO_PARAMETRO_FALTANTE, "Faltan campos obligatorios");
+        }
+
+        if (
+            !is_string($nombre) ||
+            !is_string($apellido1) ||
+            !is_string($apellido2) ||
+            !is_numeric($telefono)
+        ) {
+            throw new ExcepcionApi(self::ESTADO_PARAMETRO_INCORRECTO, "Los valores no son del tipo correcto o faltan campos obligatorios");
+        }
+
     
         try {
             $pdo = ConexionBD::obtenerInstancia()->obtenerBD();
@@ -171,17 +258,17 @@ class usuarios{
 
             $claveApi = $cabeceras["Authorization"];
 
-            if (usuarios::validarClaveApi($claveApi)) {
-                return usuarios::obtenerIdUsuario($claveApi);
+            if (usuario::validarClaveApi($claveApi)) {
+                return usuario::obtenerIdUsuario($claveApi);
             } else {
                 throw new ExcepcionApi(
-                    self::ESTADO_CLAVE_NO_AUTORIZADA, "Clave de API no autorizada", 401);
+                    self::ESTADO_CLAVE_NO_AUTORIZADA, "Token no autorizado");
             }
 
         } else {
             throw new ExcepcionApi(
                 self::ESTADO_AUSENCIA_CLAVE_API,
-                utf8_encode("Se requiere Clave del API para autenticación"));
+                utf8_encode("Se requiere Token para autenticación"));
         }
     }
 
